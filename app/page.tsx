@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import BottomNav from "./components/BottomNav";
@@ -41,7 +41,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [promoIndex, setPromoIndex] = useState(0);
   const [qrOpen, setQrOpen] = useState(false);
-  const promoRef = useRef<HTMLDivElement>(null);
   const dragScroll = useDragScroll();
 
   useEffect(() => {
@@ -84,9 +83,9 @@ export default function Home() {
 
   // Handle promo scroll to detect current slide
   const handlePromoScroll = () => {
-    if (!promoRef.current) return;
-    const { scrollLeft, clientWidth } = promoRef.current;
-    setPromoIndex(Math.round(scrollLeft / clientWidth));
+    const el = dragScroll.ref.current;
+    if (!el) return;
+    setPromoIndex(Math.round(el.scrollLeft / el.clientWidth));
   };
 
   if (loading) return (
@@ -216,10 +215,9 @@ export default function Home() {
       {promotions.length > 0 && (
         <div style={{ padding: "20px 16px 0" }}>
           <div
-            ref={promoRef}
+            ref={dragScroll.ref}
             onScroll={handlePromoScroll}
             className="swipe-x"
-            {...dragScroll}
             style={{
               ...dragScroll.style,
               display: "flex",

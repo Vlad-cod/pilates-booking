@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { useDragScroll } from "../hooks/useDragScroll";
 
 const QRScanner = dynamic(() => import("../components/QRScanner"), { ssr: false });
 
@@ -151,7 +152,7 @@ const s = {
 };
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"schedule" | "checkin" | "members" | "penalties" | "updates" | "scan">("schedule");
+  const [tab, setTab] = useState<"schedule" | "checkin" | "members" | "penalties" | "updates" | "scan" | "pricing">("schedule");
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -178,11 +179,20 @@ export default function AdminPage() {
   const [postingUpdate, setPostingUpdate] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
 
+  const tabDragScroll = useDragScroll();
+
   const [scannerActive, setScannerActive] = useState(false);
   const [scannedUser, setScannedUser] = useState<Member | null>(null);
   const [scanError, setScanError] = useState("");
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [scanSuccess, setScanSuccess] = useState(false);
+
+  const [pricingPackages, setPricingPackages] = useState<{ id: string; name: string | null; classes: number; price: string; type: string; active: boolean; sort_order: number }[]>([]);
+  const [pricingForm, setPricingForm] = useState({ name: "", classes: "", price: "", type: "package" });
+  const [showPricingForm, setShowPricingForm] = useState(false);
+  const [savingPricing, setSavingPricing] = useState(false);
+  const [editingPkg, setEditingPkg] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", classes: "", price: "", type: "package" });
 
   useEffect(() => {
     const supabase = createClient();
@@ -197,7 +207,13 @@ export default function AdminPage() {
   }, [router]);
 
   const loadAll = async () => {
-    await Promise.all([loadClasses(0), loadTodayClasses(), loadMembers(), loadPenalties(), loadUpdates()]);
+    await Promise.all([loadClasses(0), loadTodayClasses(), loadMembers(), loadPenalties(), loadUpdates(), loadPricing()]);
+  };
+
+  const loadPricing = async () => {
+    const supabase = createClient();
+    const { data } = await supabase.from("packages").select("*").order("type").order("sort_order");
+    setPricingPackages(data || []);
   };
 
   const loadClasses = async (offset: number) => {
@@ -428,6 +444,7 @@ export default function AdminPage() {
     { key: "members", label: "Members", badge: pendingMembers.length > 0 ? pendingMembers.length : null },
     { key: "penalties", label: "Fines" },
     { key: "updates", label: "Posts" },
+    { key: "pricing", label: "Pricing" },
   ] as const;
 
   return (
@@ -444,7 +461,7 @@ export default function AdminPage() {
       </div>
 
       {/* Tab bar */}
-      <div style={{ display: "flex", background: "white", borderBottom: "1px solid #e2d9ce", overflowX: "auto", scrollbarWidth: "none" }}>
+      <div ref={tabDragScroll.ref} style={{ ...tabDragScroll.style, display: "flex", background: "white", borderBottom: "1px solid #e2d9ce", overflowX: "auto", scrollbarWidth: "none" }}>
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -917,6 +934,142 @@ export default function AdminPage() {
                     <p style={{ fontSize: "0.68rem", color: "#a8a29e", marginTop: "8px" }}>{new Date(u.created_at).toLocaleDateString()}</p>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── PRICING ── */}
+        {tab === "pricing" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <p style={s.sectionTitle}>Packages & Offers</p>
+              <button onClick={() => setShowPricingForm(!showPricingForm)} style={s.btnPrimary}>
+                {showPricingForm ? "Cancel" : "+ Add"}
+              </button>
+            </div>
+
+            {showPricingForm && (
+              <div style={{ ...s.card, padding: "18px" }}>
+                <p style={{ ...s.label, marginBottom: "14px" }}>New Package</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <select value={pricingForm.type} onChange={(e) => setPricingForm((f) => ({ ...f, type: e.target.value }))} style={s.input}>
+                    <option value="package">Package</option>
+                    <option value="special_offer">Special Offer</option>
+                  </select>
+                  <input placeholder="Label (optional, e.g. Intro Pack)" value={pricingForm.name} onChange={(e) => setPricingForm((f) => ({ ...f, name: e.target.value }))} style={s.input} />
+                  <input placeholder="Number of classes" type="number" min="1" value={pricingForm.classes} onChange={(e) => setPricingForm((f) => ({ ...f, classes: e.target.value }))} style={s.input} />
+                  <input placeholder="Price (e.g. 500,000 ₫)" value={pricingForm.price} onChange={(e) => setPricingForm((f) => ({ ...f, price: e.target.value }))} style={s.input} />
+                  <button
+                    disabled={savingPricing || !pricingForm.classes || !pricingForm.price}
+                    onClick={async () => {
+                      setSavingPricing(true);
+                      const supabase = createClient();
+                      await supabase.from("packages").insert({
+                        name: pricingForm.name || null,
+                        classes: parseInt(pricingForm.classes),
+                        price: pricingForm.price,
+                        type: pricingForm.type,
+                        sort_order: pricingPackages.filter((p) => p.type === pricingForm.type).length + 1,
+                      });
+                      setPricingForm({ name: "", classes: "", price: "", type: "package" });
+                      setShowPricingForm(false);
+                      setSavingPricing(false);
+                      loadPricing();
+                    }}
+                    style={s.btnPrimary}
+                  >
+                    {savingPricing ? "Saving..." : "Save Package"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Special Offers */}
+            {pricingPackages.filter((p) => p.type === "special_offer").length > 0 && (
+              <div>
+                <p style={{ ...s.label, marginBottom: "10px" }}>Special Offers</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {pricingPackages.filter((p) => p.type === "special_offer").map((pkg) => (
+                    <div key={pkg.id} style={{ ...s.card, padding: "14px 18px" }}>
+                      {editingPkg === pkg.id ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} placeholder="Label (optional)" style={s.input} />
+                          <input value={editForm.classes} type="number" onChange={(e) => setEditForm((f) => ({ ...f, classes: e.target.value }))} placeholder="Classes" style={s.input} />
+                          <input value={editForm.price} onChange={(e) => setEditForm((f) => ({ ...f, price: e.target.value }))} placeholder="Price" style={s.input} />
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button onClick={async () => {
+                              const supabase = createClient();
+                              await supabase.from("packages").update({ name: editForm.name || null, classes: parseInt(editForm.classes), price: editForm.price }).eq("id", pkg.id);
+                              setEditingPkg(null);
+                              loadPricing();
+                            }} style={s.btnPrimary}>Save</button>
+                            <button onClick={() => setEditingPkg(null)} style={s.btnGhost}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1c1917" }}>{pkg.name || `${pkg.classes} ${pkg.classes === 1 ? "class" : "classes"}`}</p>
+                            {pkg.name && <p style={{ fontSize: "0.78rem", color: "#78716c" }}>{pkg.classes} classes</p>}
+                            <p style={{ fontSize: "0.88rem", color: "#8b6f47", fontWeight: 600, marginTop: "2px" }}>{pkg.price}</p>
+                          </div>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button onClick={() => { setEditingPkg(pkg.id); setEditForm({ name: pkg.name || "", classes: String(pkg.classes), price: pkg.price, type: pkg.type }); }} style={s.btnGhost}>Edit</button>
+                            <button onClick={async () => { const supabase = createClient(); await supabase.from("packages").delete().eq("id", pkg.id); loadPricing(); }} style={s.btnDanger}>Delete</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Packages */}
+            {pricingPackages.filter((p) => p.type === "package").length > 0 && (
+              <div>
+                <p style={{ ...s.label, marginBottom: "10px" }}>Packages</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {pricingPackages.filter((p) => p.type === "package").map((pkg) => (
+                    <div key={pkg.id} style={{ ...s.card, padding: "14px 18px" }}>
+                      {editingPkg === pkg.id ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} placeholder="Label (optional)" style={s.input} />
+                          <input value={editForm.classes} type="number" onChange={(e) => setEditForm((f) => ({ ...f, classes: e.target.value }))} placeholder="Classes" style={s.input} />
+                          <input value={editForm.price} onChange={(e) => setEditForm((f) => ({ ...f, price: e.target.value }))} placeholder="Price" style={s.input} />
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button onClick={async () => {
+                              const supabase = createClient();
+                              await supabase.from("packages").update({ name: editForm.name || null, classes: parseInt(editForm.classes), price: editForm.price }).eq("id", pkg.id);
+                              setEditingPkg(null);
+                              loadPricing();
+                            }} style={s.btnPrimary}>Save</button>
+                            <button onClick={() => setEditingPkg(null)} style={s.btnGhost}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1c1917" }}>{pkg.name || `${pkg.classes} ${pkg.classes === 1 ? "class" : "classes"}`}</p>
+                            {pkg.name && <p style={{ fontSize: "0.78rem", color: "#78716c" }}>{pkg.classes} classes</p>}
+                            <p style={{ fontSize: "0.88rem", color: "#8b6f47", fontWeight: 600, marginTop: "2px" }}>{pkg.price}</p>
+                          </div>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button onClick={() => { setEditingPkg(pkg.id); setEditForm({ name: pkg.name || "", classes: String(pkg.classes), price: pkg.price, type: pkg.type }); }} style={s.btnGhost}>Edit</button>
+                            <button onClick={async () => { const supabase = createClient(); await supabase.from("packages").delete().eq("id", pkg.id); loadPricing(); }} style={s.btnDanger}>Delete</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {pricingPackages.length === 0 && (
+              <div style={{ ...s.card, padding: "48px 24px", textAlign: "center" }}>
+                <p style={{ color: "#a8a29e", fontSize: "0.88rem" }}>No packages yet. Tap + Add to create one.</p>
               </div>
             )}
           </div>

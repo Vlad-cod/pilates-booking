@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -79,7 +79,6 @@ export default function ClassesPage() {
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string>("");
-  const scrollRef = useRef<HTMLDivElement>(null);
   const dragScroll = useDragScroll();
   const router = useRouter();
   const weekDays = get14Days();
@@ -212,9 +211,8 @@ export default function ClassesPage() {
 
         {/* Day selector */}
         <div
-          ref={scrollRef}
+          ref={dragScroll.ref}
           className="swipe-x"
-          {...dragScroll}
           style={{
             ...dragScroll.style,
             display: "flex",
